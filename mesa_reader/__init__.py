@@ -3,6 +3,31 @@ from os.path import join
 import re
 
 import numpy as np
+from scipy import integrate
+
+# Physical Constants
+G = 6.6726e-8
+c = 2.99792458e10
+kB = 1.380658e-16
+e = 4.8032e-10
+h = 6.6261e-27
+mp = 1.6726e-24
+me = 9.1094e-28
+arad = 7.5657e-15
+eV = 1.6021772e-12
+NA = 6.022e23
+
+# Astrophysical constants
+Msun = 1.989e33
+Rsun = 6.955e10
+Lsun = 3.85e33
+Mearth = 5.9722e27
+Rearth = 6.371e8
+pc = 3.085e18
+ly = 9.463e17
+AU = 1.496e13
+
+elements = ["h1", "he3", "he4", "c12", "c13", "n13", "n14", "n15", "o14", "o15", "o16", "o17", "o18", "f17", "f18", "f19", "ne18", "ne19", "ne20", "mg22", "mg24", "fe56"]
 
 
 class ProfileError(Exception):
@@ -119,6 +144,7 @@ class MesaData:
         self.header_data = None
         self.header_names = None
         self.read_data()
+        self.uniform_data()
 
     def __lt__(self, other):
         try:
@@ -682,6 +708,28 @@ class MesaData:
         else:
             raise AttributeError(method_name)
 
+    def uniform_data(self):
+        # creates a new dictionary `CGSdata` for the main data arrays, with the same
+        # names for both profile and model file, all in CGS
+        CGSdata = {}
+
+        if self.file_type == "model":
+            CGSdata['rho'],CGSdata['T'],CGSdata['r'],CGSdata['L'] = \
+                self.d,self.T,self.R,self.L
+            CGSdata['kappa'] = None
+
+        elif self.file_type == "log":
+            CGSdata['rho'],CGSdata['T'],CGSdata['r'],CGSdata['L'] = \
+                self.Rho,self.T,self.R*Rsun,self.luminosity*Lsun
+            CGSdata['kappa'] = self.opacity
+            CGSdata['LEdd'] = 4*np.pi*G*self.star_mass*Msun*c/self.opacity
+
+        # column depth
+        CGSdata['y'] = -integrate.cumtrapz(CGSdata['rho'],CGSdata['r'])
+        # minus because arrays start with outermost grid point
+        
+        
+        self.CGSdata = CGSdata
 
 class MesaProfileIndex:
 
@@ -882,6 +930,7 @@ class MesaProfileIndex:
             return self.data(method_name)
         else:
             raise AttributeError(method_name)
+
 
 
 class MesaLogDir:
@@ -1175,3 +1224,79 @@ class MesaLogDir:
             inputs[m_num] = this_input
         mask = np.array([f(*inputs[m_num]) for m_num in self.model_numbers])
         return self.model_numbers[mask]
+
+
+import matplotlib.pyplot as plt
+Rsun = 6.955e10
+Lsun = 3.85e33
+
+# from scipy.integrate import cumtrapz
+# def column(r,rho):
+#     # y(r)=\int_r^\infty \rho(r)dr
+#     return -cumtrapz(rho,r) #minus because arrays start with outermost grid point
+
+
+class MesaPlot:
+
+    """ Quickly make some pre-prepared plots from Mesa Data
+    """
+
+    def __init__(self, data):
+        self.d = data
+        self.d2 = data.CGSdata
+        self.fig = None
+
+    def Update(self, new_data=None):
+        # self.d = new_data
+        # self.fig.canvas.draw()
+        # self.fig.canvas.flush_events()
+        pass
+
+    def Presets(self, number):
+
+        if number==1:
+            self.fig,(ax1,ax2) = plt.subplots(2,1)
+            ax1.set_xlabel(r'$\rho$ (g cm$^{-3}$)')
+            ax1.set_ylabel(r'$T$ (K)')
+            ax1b = ax1.twinx()
+            ax1b.set_ylabel(r"$L/L_\mathrm{Edd}$",color='b')
+            ax2.set_xlabel(r'$y$ (g cm$^{-2}$)')
+            ax2.set_ylabel(r'$X_i$')    
+            ax2b = ax2.twinx()
+            ax2b.set_ylabel(r"$\kappa$")
+
+            ax1.loglog(self.d2['rho'], self.d2['T'], color='k', lw=0.7)
+            ax1b.loglog(self.d2['rho'], self.d2['L']/self.d2['LEdd'], color='b', lw=0.7)
+
+            for el in elements:
+                if self.d.in_data(el):
+                    X = self.d.bulk_data[el]
+                    if max(X)>=1e-3:
+                        for i,char in enumerate(el):
+                            if char.isdigit():
+                                letters = el[0].upper() + el[1:i]
+                                numbers = el[i:]
+                                break
+                        ax2.loglog(self.d2['y'],X[1:],lw=0.7,label=(r'${}^{%s}$%s'%(numbers,letters)))
+
+            ax2b.semilogx(self.d2['y'], self.d2['kappa'][1:], 'k--', lw=0.8)
+            ax2.legend(frameon=False,loc=3,ncol=2,fontsize=8)
+
+            plt.show()
+
+        elif number==2:
+            pass
+
+
+
+    # def Initialize_fig(self, nrows=1, ncol=1, **kwargs):
+    #     self.fig,self.axes = plt.subplots(nrows, ncol, **kwargs)
+
+    def Create(self):
+        # self.fig,ax = plt.subplots(1,1)
+        # self.rho_T(ax)
+        pass
+
+    def save(self, filename="figure.png", format="png"):
+        if self.fig is not None:
+            self.fig.savefig(filename, format=format, bbox_inches="tight")

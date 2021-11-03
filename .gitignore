@@ -9,3 +9,5 @@ make.bat
 *.swp
 *.egg-info
 .buildinfo
+sample_data_files/
+test_plots.py
