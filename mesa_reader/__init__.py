@@ -4,6 +4,7 @@ import re
 
 import numpy as np
 from scipy import integrate
+import matplotlib.pyplot as plt
 
 # Physical Constants
 G = 6.6726e-8
@@ -27,7 +28,13 @@ pc = 3.085e18
 ly = 9.463e17
 AU = 1.496e13
 
-elements = ["h1", "he3", "he4", "c12", "c13", "n13", "n14", "n15", "o14", "o15", "o16", "o17", "o18", "f17", "f18", "f19", "ne18", "ne19", "ne20", "mg22", "mg24", "fe56"]
+isotope_filepath = os.environ.get("MESA_DIR")+'/data/chem_data/isotopes.data'
+isotope_list = []
+with open(isotope_filepath) as f:
+    next(f)
+    for i,line in enumerate(f):
+        if i%4==0:
+            isotope_list.append(line.split()[0])
 
 
 class ProfileError(Exception):
@@ -1226,14 +1233,6 @@ class MesaLogDir:
         return self.model_numbers[mask]
 
 
-import matplotlib.pyplot as plt
-Rsun = 6.955e10
-Lsun = 3.85e33
-
-# from scipy.integrate import cumtrapz
-# def column(r,rho):
-#     # y(r)=\int_r^\infty \rho(r)dr
-#     return -cumtrapz(rho,r) #minus because arrays start with outermost grid point
 
 
 class MesaPlot:
@@ -1262,24 +1261,30 @@ class MesaPlot:
             ax1b.set_ylabel(r"$L/L_\mathrm{Edd}$",color='b')
             ax2.set_xlabel(r'$y$ (g cm$^{-2}$)')
             ax2.set_ylabel(r'$X_i$')    
-            ax2b = ax2.twinx()
-            ax2b.set_ylabel(r"$\kappa$")
 
             ax1.loglog(self.d2['rho'], self.d2['T'], color='k', lw=0.7)
-            ax1b.loglog(self.d2['rho'], self.d2['L']/self.d2['LEdd'], color='b', lw=0.7)
 
-            for el in elements:
-                if self.d.in_data(el):
-                    X = self.d.bulk_data[el]
+            if self.d.file_type=='log':
+                ax1b.loglog(self.d2['rho'], self.d2['L']/self.d2['LEdd'], color='b', lw=0.7)
+            else:
+                ax1b.loglog(self.d2['rho'], self.d2['L'], color='b', lw=0.7)
+
+            for iso in isotope_list:
+                if self.d.in_data(iso):
+                    X = self.d.bulk_data[iso]
                     if max(X)>=1e-3:
-                        for i,char in enumerate(el):
+                        for i,char in enumerate(iso):
                             if char.isdigit():
-                                letters = el[0].upper() + el[1:i]
-                                numbers = el[i:]
+                                letters = iso[0].upper() + iso[1:i]
+                                numbers = iso[i:]
                                 break
                         ax2.loglog(self.d2['y'],X[1:],lw=0.7,label=(r'${}^{%s}$%s'%(numbers,letters)))
 
-            ax2b.semilogx(self.d2['y'], self.d2['kappa'][1:], 'k--', lw=0.8)
+
+            if self.d.file_type=='log':
+                ax2b = ax2.twinx()
+                ax2b.set_ylabel(r"$\kappa$")
+                ax2b.semilogx(self.d2['y'], self.d2['kappa'][1:], 'k--', lw=0.8)
             ax2.legend(frameon=False,loc=3,ncol=2,fontsize=8)
 
             plt.show()
